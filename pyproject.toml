@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "effbelt"
+version = "0.1.0"
+description = "LLM efficiency toolbelt: fit, tokenwaste, evalsanity, quantcheck, cheapest, modelcard — save money and catch silent bugs, on a laptop."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Sardor Razikov" }]
+keywords = ["llm", "gpu", "memory", "kv-cache", "quantization", "cost", "efficiency", "benchmark"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.optional-dependencies]
+# Only the model-touching tools (quantcheck tensors, live modelcard) need these.
+torch = ["torch>=2.1"]
+hf = ["torch>=2.1", "transformers>=5", "kvquant-hf"]
+
+[project.scripts]
+effbelt = "effbelt.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/SRKRZ23/effbelt"
+Source = "https://github.com/SRKRZ23/effbelt"
+Sponsor = "https://github.com/sponsors/SRKRZ23"
+
+[tool.setuptools]
+packages = ["effbelt"]
