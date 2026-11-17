@@ -49,6 +49,19 @@ def _cmd_modelcard(a):
     return 0
 
 
+def _cmd_pareto(a):
+    from .pareto import analyze, Config
+    import json
+    with open(a.data, encoding="utf-8") as f:
+        d = json.load(f)
+    cfgs = [Config(c["name"], float(c["cost"]), c.get("correct"),
+                   c.get("accuracy"), c.get("n")) for c in d["configs"]]
+    floor = d.get("floor", a.floor)
+    rep = analyze(cfgs, floor=floor, min_cut_pct=a.min_cut)
+    print(rep.report())
+    return 1 if rep.traps else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="effbelt",
                                 description="LLM efficiency toolbelt")
@@ -82,6 +95,14 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--live", help="HF repo id to MEASURE real ppl deltas")
     m.add_argument("--max-tokens", type=int, default=200)
     m.set_defaults(func=_cmd_modelcard)
+
+    pr = sub.add_parser("pareto",
+                        help="accuracy-vs-cost frontier + cost-per-correct (catch a cost cut that loses accuracy)")
+    pr.add_argument("data", help="json: {configs:[{name,cost,correct[]|accuracy,n}], floor?}")
+    pr.add_argument("--floor", type=float, default=None, help="accuracy floor 0..1 (or set in the json)")
+    pr.add_argument("--min-cut", type=float, default=20.0,
+                    help="min headline cost-cut %% before a config can be called a trap")
+    pr.set_defaults(func=_cmd_pareto)
 
     return p
 

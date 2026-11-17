@@ -16,6 +16,7 @@ pip install "effbelt[hf]"      # + quantcheck tensors and live modelcard
 | `evalsanity` | **is your benchmark lying?** (contamination, degenerate data/preds) | no |
 | `quantcheck` | **did your quantization actually do anything?** (silent no-op guard) | tensors only |
 | `cheapest` | the cheapest config that still clears **your** quality bar | your eval |
+| `pareto` | the **accuracy-vs-cost frontier** + cost-per-correct — catches a cost cut that quietly loses accuracy | your eval |
 | `modelcard` | one-page quant tradeoff card (exact memory + *measured* ppl) | optional |
 
 Every number here was produced on an Apple-silicon MacBook, offline. Nothing is invented.
@@ -113,6 +114,28 @@ res = cheapest.sweep([
 ], bar=0.80)
 print(res.report())   # -> use the cheapest one that clears 0.80
 ```
+
+## `pareto` — the accuracy-vs-cost frontier, so a cheap-but-wrong config can't hide
+
+A headline like "90% fewer tokens" means nothing without the accuracy it cost you.
+`pareto` plots every config on the cost-vs-accuracy frontier, reports **cost-per-correct**
+(cost / accuracy — the honest efficiency number), and flags the **traps**: a big cost cut
+that falls below your accuracy floor, or that doesn't even improve cost-per-correct.
+
+```bash
+# json: {"floor":0.80,"configs":[{"name","cost","correct":[...] | "accuracy","n"}, ...]}
+effbelt pareto configs.json --floor 0.80     # exit code 1 if any trap is found (CI-friendly)
+```
+```text
+   cost      acc     $/correct  frontier  config
+    10.000  0.5500    18.182     *      ctx-90pct-cut
+    60.000  0.8800    68.182     *      int8
+   100.000  0.9000   111.111     *      full
+TRAPS (a big cost cut that is not the deal it looks like):
+  ! ctx-90pct-cut: cost -90% but accuracy -35.0pp -> accuracy 0.550 is below your floor 0.8 (no retry saves you)
+```
+Give it per-item `correct` booleans from your own eval, or an `accuracy` directly. The logic
+is only the honest frontier + cost-per-correct; it is as good as your eval.
 
 ---
 

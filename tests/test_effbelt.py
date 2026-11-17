@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from effbelt import memory, tokenwaste, evalsanity, quantcheck, cheapest, modelcard
+from effbelt import memory, tokenwaste, evalsanity, quantcheck, cheapest, modelcard, pareto
 from effbelt.models import MODELS
 
 GB = memory.GB
@@ -202,6 +202,57 @@ def test_modelcard_live_measures_real_ppl():
                            measured_on=REPO)
     assert card.rows[1].ppl_delta_pct is not None
     print(f"\n  measured gemma KV-quant: {measured}")
+
+
+def test_pareto_catches_the_cheap_but_wrong_config():
+    # full: expensive but accurate; a "90% cheaper" config that drops below the floor;
+    # an int8 that is a genuinely good trade; and a dominated config.
+    cfgs = [
+        pareto.Config("full",       cost=100.0, correct=[True] * 90 + [False] * 10),
+        pareto.Config("int8",       cost=60.0,  correct=[True] * 88 + [False] * 12),
+        pareto.Config("quant-90cut", cost=10.0, correct=[True] * 55 + [False] * 45),
+        pareto.Config("bad",        cost=80.0,  correct=[True] * 50 + [False] * 50),
+    ]
+    r = pareto.analyze(cfgs, floor=0.80)
+    by = {row.name: row for row in r.rows}
+    # the headline cheap config violates the floor -> it is a trap
+    assert any(t.name == "quant-90cut" for t in r.traps)
+    assert "below your floor" in next(t for t in r.traps if t.name == "quant-90cut").note
+    # 'bad' (cost 80, acc .50) is strictly beaten by int8 (cost 60, acc .88) -> dominated
+    assert not by["bad"].on_frontier and by["bad"].dominated_by == "int8"
+    # the most accurate config is the baseline and sits on the frontier
+    assert by["full"].on_frontier
+    # cost-per-correct is reported for all (full = 100/.90 ~ 111.1)
+    assert abs(by["full"].cost_per_correct - 100 / 0.90) < 1e-6
+
+
+def test_pareto_no_trap_when_everything_clears_the_floor():
+    cfgs = [
+        pareto.Config("full", cost=100.0, accuracy=0.90, n=100),
+        pareto.Config("int8", cost=55.0,  accuracy=0.89, n=100),  # big cut, tiny drop, above floor
+    ]
+    r = pareto.analyze(cfgs, floor=0.80)
+    assert r.traps == []                      # a good trade is NOT flagged as a trap
+    by = {row.name: row for row in r.rows}
+    assert by["int8"].cost_per_correct < by["full"].cost_per_correct  # genuinely more efficient
+
+
+def test_pareto_significance_guard():
+    # small N: a 2pp accuracy gap is NOT statistically distinguishable (Wilson intervals overlap)
+    small = pareto.analyze([
+        pareto.Config("full", cost=100.0, accuracy=0.90, n=100),
+        pareto.Config("int8", cost=60.0,  accuracy=0.88, n=100),
+    ])
+    by = {row.name: row for row in small.rows}
+    assert by["int8"].distinguishable is False          # "better/worse" here would be noise
+    assert "within noise" in small.report()
+    # large N: the same gap becomes real
+    big = pareto.analyze([
+        pareto.Config("full", cost=100.0, accuracy=0.90, n=20000),
+        pareto.Config("weak", cost=60.0,  accuracy=0.80, n=20000),
+    ])
+    by = {row.name: row for row in big.rows}
+    assert by["weak"].distinguishable is True
 
 
 if __name__ == "__main__":
